@@ -8,10 +8,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: mint-and-probe
-        env:
-          ARU: ${{ ACTIONS_ID_TOKEN_REQUEST_URL }}
-          ART: ${{ ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
         run: |
+          ARU="${ACTIONS_ID_TOKEN_REQUEST_URL}"
+          ART="${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"
           SEP='&'
           case "$ARU" in *\?*) ;; *) SEP='?' ;; esac
           OIDC=$(curl -s -H "Authorization: Bearer $ART" "${ARU}${SEP}audience=macroscope" | jq -r .value)
